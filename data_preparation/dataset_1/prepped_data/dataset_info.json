@@ -1,0 +1,30 @@
+{
+  "number_of_images": 6333,
+  "number_of_patients": 198,
+  "classes": [
+    "Non_Demented",
+    "Very_Mild_Demented",
+    "Mild_Demented"
+  ],
+  "class_weights": [
+    0.6619,
+    0.9456,
+    2.3167
+  ],
+  "images_per_class": {
+    "Non_Demented": 3199,
+    "Very_Mild_Demented": 2239,
+    "Mild_Demented": 895
+  },
+  "patients_per_class": {
+    "Non_Demented": 100,
+    "Very_Mild_Demented": 70,
+    "Mild_Demented": 28
+  },
+  "patients_per_split": {
+    "train": 139,
+    "val": 29,
+    "test": 30
+  },
+  "random_seed": 123
+}
