@@ -1,4 +1,4 @@
-# Put the OASIS data in this folder
+# Place OASIS-1 data here
 
 Not in the repo, and it can't be. It's 68GB, and the data use agreement we signed says we
 can't redistribute it - that includes public code repos and includes the prepped output.

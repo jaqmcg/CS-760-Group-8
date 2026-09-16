@@ -1,9 +1,9 @@
-# Datasets don't go in here - see the PLACE_DATA_HERE.md in each Data folder.
+# Datasets don't go in here - see the PLACE_..._DATA_HERE.md in each Data folder.
 # Ignore everything in them except that file.
 data_preparation/dataset_1/Data/*
-!data_preparation/dataset_1/Data/PLACE_DATA_HERE.md
+!data_preparation/dataset_1/Data/PLACE_KAGGLE_DATA_HERE.md
 data_preparation/dataset_2/Data/*
-!data_preparation/dataset_2/Data/PLACE_DATA_HERE.md
+!data_preparation/dataset_2/Data/PLACE_OASIS-1_DATA_HERE.md
 
 # Scans pulled out of the OASIS tars (~3GB). Regenerate by running the notebook.
 data_preparation/dataset_2/extracted_scans/

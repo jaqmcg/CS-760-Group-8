@@ -1,4 +1,4 @@
-# Put the Kaggle data in this folder
+# Place Kaggle data here
 
 Not in the repo - too big and the licence on it is listed as "Unknown".
 
