@@ -3,8 +3,8 @@
 We've prepped two. Dataset 1 is the Kaggle one we started with, dataset 2 is the proper OASIS
 data. Both end up in the same shape so you can swap between them.
 
-All numbers come from `dataset_1/01_data_preparation.ipynb` and
-`dataset_2/02_oasis_preparation.ipynb`.
+All numbers come from `kaggle/01_data_preparation.ipynb` and
+`OASIS-1/02_oasis_preparation.ipynb`.
 
 ## Quick comparison
 
