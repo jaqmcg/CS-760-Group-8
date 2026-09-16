@@ -148,11 +148,13 @@ There's a 2025 paper showing that removing the skull can make a model latch onto
 behind rather than the actual brain tissue. The un-stripped version is in the tars
 (`_t88_gfc` instead of `_t88_masked_gfc`) if anyone wants to compare.
 
-### It's huge and we can't share it
+### It's huge and we can't share it publicly
 
 68GB of tar files. Can't go in the repo, and the data agreement says we can't redistribute it
-anyway. Everyone who wants it has to register themselves and run the notebook. The prepped
-output is small (84MB) but it's still OASIS images so same rules apply.
+anyway - that covers the prepped output too, since it's still OASIS images.
+
+For the group it's on the OneDrive along with the prepped output. Anyone outside the group has
+to register with OASIS themselves and run the notebook.
 
 ---
 
