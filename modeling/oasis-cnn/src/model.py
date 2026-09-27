@@ -108,3 +108,37 @@ def build_vit_model(input_shape=(208, 176, 1), num_classes=3, l2_reg=1e-5):
     outputs = layers.Dense(num_classes, activation="softmax")(features)
 
     return keras.Model(inputs, outputs, name="dementia_vit")
+
+"""CNN-SVM architecture for 3-class dementia classification on 208x176 MRI slices."""
+
+def build_cnn_svm_model(input_shape=(208, 176, 1), num_classes=3, l2=1e-5):
+    inputs = keras.Input(shape=input_shape)
+
+    # Custom Augmentation (NO FLIPS)
+    x = layers.RandomRotation(0.02)(inputs)
+    x = layers.RandomTranslation(0.02, 0.02)(x)
+
+    reg = keras.regularizers.l2(l2)
+
+    # Core CNN Feature Extractor (No BatchNorm)
+    for filters in (24, 48, 96):
+        x = layers.Conv2D(
+            filters, 3, padding="same", activation="relu", kernel_regularizer=reg
+        )(x)
+        x = layers.MaxPooling2D()(x)
+        x = layers.Dropout(0.2)(x)
+
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(64, activation="relu", kernel_regularizer=reg)(x)
+    x = layers.Dropout(0.3)(x)
+
+    # SVM OUTPUT HEAD:
+    # Linear activation paired with L2 penalty behaves as a Multi-class SVM
+    # Note: Use 'squared_hinge' as the loss function during model.compile()!
+    outputs = layers.Dense(
+        num_classes,
+        activation="linear",
+        kernel_regularizer=keras.regularizers.l2(1e-3),
+    )(x)
+
+    return keras.Model(inputs, outputs, name="dementia_cnn_svm")
