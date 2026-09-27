@@ -142,3 +142,53 @@ def build_cnn_svm_model(input_shape=(208, 176, 1), num_classes=3, l2=1e-5):
     )(x)
 
     return keras.Model(inputs, outputs, name="dementia_cnn_svm")
+
+"""CNN-Transformer architecture for 3-class dementia classification on 208x176 MRI slices."""
+
+def build_hybrid_cnn_transformer(
+    input_shape=(208, 176, 1), num_classes=3, l2=1e-5
+):
+    inputs = keras.Input(shape=input_shape)
+
+    # Global Augmentation Setup (NO FLIPS)
+    aug = layers.RandomRotation(0.02)(inputs)
+    aug = layers.RandomTranslation(0.02, 0.02)(aug)
+
+    reg = keras.regularizers.l2(l2)
+
+    # --- BRANCH 1: CNN (Local Textures) ---
+    cnn_x = layers.Conv2D(
+        32, 3, padding="same", activation="relu", kernel_regularizer=reg
+    )(aug)
+    cnn_x = layers.MaxPooling2D()(cnn_x)
+    cnn_x = layers.Dropout(0.2)(cnn_x)
+    cnn_features = layers.GlobalAveragePooling2D()(cnn_x)
+
+    # --- BRANCH 2: Transformer (Global Dependencies) ---
+    # Downscale image to a lower resolution patch grid
+    patch_proj = layers.Conv2D(
+        32,
+        kernel_size=16,
+        strides=16,
+        padding="valid",
+        kernel_regularizer=reg,
+    )(aug)
+    # Flatten grid to sequence
+    seq_len = (input_shape[0] // 16) * (input_shape[1] // 16)
+    trans_x = layers.Reshape((seq_len, 32))(patch_proj)
+
+    # Lightweight Self-Attention Layer
+    attn_out = layers.MultiHeadAttention(num_heads=2, key_dim=32, dropout=0.2)(
+        trans_x, trans_x
+    )
+    transformer_features = layers.GlobalAveragePooling1D()(attn_out)
+
+    # --- FEATURE FUSION & DECISION HEAD ---
+    # Merge both structural views together
+    fused = layers.Concatenate()([cnn_features, transformer_features])
+
+    x = layers.Dense(64, activation="relu", kernel_regularizer=reg)(fused)
+    x = layers.Dropout(0.3)(x)
+    outputs = layers.Dense(num_classes, activation="softmax")(x)
+
+    return keras.Model(inputs, outputs, name="dementia_hybrid_net")
