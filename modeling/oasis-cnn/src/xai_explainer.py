@@ -49,6 +49,8 @@ def overlay_gradcam(img, heatmap, alpha=0.4):
     
     # Use Jet colormap to colorize the heatmap
     jet = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    # OpenCV returns BGR; convert so red = high importance when blended with RGB
+    jet = cv2.cvtColor(jet, cv2.COLOR_BGR2RGB)
     jet = cv2.resize(jet, (img.shape[1], img.shape[0]))
     
     # Convert grayscale input back to RGB for merging colors
@@ -117,19 +119,24 @@ def explain_with_shap(model, background_images, test_image):
 # =====================================================================
 # 4. PLOTTING AND EVALUATION EXECUTION
 # =====================================================================
-def main_explain(model, sample_mri, background_batch=None):
+def main_explain(model, sample_mri, background_batch=None, last_conv_layer_name=None):
     """
     Args:
         model: Trained Keras/TF model instance
         sample_mri: Shape (208, 176, 1), scaled 0.0 to 1.0
         background_batch: Batch of training scans (e.g. 50 images) required for SHAP baseline
+        last_conv_layer_name: Conv layer for Grad-CAM; defaults to the model's last Conv2D
     """
     # Create batch dimension required for model execution pipeline
     img_batch = np.expand_dims(sample_mri, axis=0)
 
     # --- Run Grad-CAM ---
-    # Change 'conv2d_2' if you are targeting the ViT/Hybrid variant
-    heatmap, pred_idx = generate_gradcam(model, img_batch, last_conv_layer_name="conv2d_2")
+    # Keras numbers layers per session (e.g. conv2d_86 in a saved checkpoint), so look the name up
+    if last_conv_layer_name is None:
+        last_conv_layer_name = [
+            l.name for l in model.layers if isinstance(l, tf.keras.layers.Conv2D)
+        ][-1]
+    heatmap, pred_idx = generate_gradcam(model, img_batch, last_conv_layer_name=last_conv_layer_name)
     gradcam_result = overlay_gradcam(sample_mri, heatmap)
 
     # --- Run LIME ---
@@ -163,8 +170,11 @@ def main_explain(model, sample_mri, background_batch=None):
 
     # SHAP Display
     if shap_values is not None:
-        # shap_values[pred_idx] maps importance map specific to targeted predicted category
-        shap_slice = shap_values[pred_idx][0].squeeze()
+        # Older shap returns a list per class; shap>=0.45 returns one (batch, H, W, C, classes) array
+        if isinstance(shap_values, list):
+            shap_slice = shap_values[pred_idx][0].squeeze()
+        else:
+            shap_slice = shap_values[0, ..., pred_idx].squeeze()
         pos_shap = np.maximum(shap_slice, 0) # Focus on features increasing probability
         axes[3].imshow(pos_shap, cmap='bwr')
         axes[3].set_title("SHAP\n(Pixel Attribution)")
