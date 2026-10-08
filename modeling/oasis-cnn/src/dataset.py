@@ -40,6 +40,41 @@ def load_split(split):
     return images, y, patient_ids
 
 
+def load_cv_fold(fold, val_fraction=0.15, seed=123):
+    """Return {'train'|'val'|'test': (images, labels, patient_ids)} for one CV fold.
+
+    The cv_fold column (patient-level, class-stratified) defines the test set;
+    a stratified val_fraction of the remaining patients is held out for early
+    stopping/checkpointing, and the rest are used for training. Splitting is
+    by patient so no subject appears in more than one set.
+    """
+    labels_df = load_labels()
+    slices = load_slices()
+
+    patients = labels_df.drop_duplicates("patient_id")
+    rest = patients[patients["cv_fold"] != fold]
+    rng = np.random.default_rng(seed + fold)
+    val_patients = []
+    for _, group in rest.groupby("label"):
+        ids = group["patient_id"].to_numpy()
+        n_val = max(1, round(len(ids) * val_fraction))
+        val_patients.extend(rng.choice(ids, n_val, replace=False))
+
+    is_test = (labels_df["cv_fold"] == fold).to_numpy()
+    is_val = labels_df["patient_id"].isin(val_patients).to_numpy()
+    masks = {"train": ~is_test & ~is_val, "val": is_val, "test": is_test}
+
+    out = {}
+    for name, mask in masks.items():
+        images = slices[mask].astype("float32")[..., np.newaxis] / 255.0
+        out[name] = (
+            images,
+            labels_df.loc[mask, "label"].to_numpy(),
+            labels_df.loc[mask, "patient_id"].to_numpy(),
+        )
+    return out
+
+
 def class_names():
     return load_dataset_info()["classes"]
 

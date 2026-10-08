@@ -48,7 +48,7 @@ def run_once(seed, X_train, y_train, X_val, y_val, X_test, y_test, patient_ids_t
     steps_per_epoch = len(X_train) // BATCH_SIZE
     val_ds = make_dataset(X_val, y_val, training=False)
 
-    model = build_model(input_shape=X_train.shape[1:], num_classes=3)
+    model = build_model(input_shape=X_train.shape[1:], num_classes=len(class_names()))
     model.compile(
         optimizer=tf.keras.optimizers.Adam(5e-4, clipnorm=1.0),
         loss="sparse_categorical_crossentropy",

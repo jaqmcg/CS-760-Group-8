@@ -119,13 +119,16 @@ def explain_with_shap(model, background_images, test_image):
 # =====================================================================
 # 4. PLOTTING AND EVALUATION EXECUTION
 # =====================================================================
-def main_explain(model, sample_mri, background_batch=None, last_conv_layer_name=None):
+def main_explain(model, sample_mri, background_batch=None, last_conv_layer_name=None,
+                 class_names=None, save_path="outputs/mri_xai_explanations.png"):
     """
     Args:
         model: Trained Keras/TF model instance
         sample_mri: Shape (208, 176, 1), scaled 0.0 to 1.0
         background_batch: Batch of training scans (e.g. 50 images) required for SHAP baseline
         last_conv_layer_name: Conv layer for Grad-CAM; defaults to the model's last Conv2D
+        class_names: Optional list used to label the predicted class in the figure
+        save_path: Where to write the figure
     """
     # Create batch dimension required for model execution pipeline
     img_batch = np.expand_dims(sample_mri, axis=0)
@@ -133,11 +136,16 @@ def main_explain(model, sample_mri, background_batch=None, last_conv_layer_name=
     # --- Run Grad-CAM ---
     # Keras numbers layers per session (e.g. conv2d_86 in a saved checkpoint), so look the name up
     if last_conv_layer_name is None:
-        last_conv_layer_name = [
-            l.name for l in model.layers if isinstance(l, tf.keras.layers.Conv2D)
-        ][-1]
-    heatmap, pred_idx = generate_gradcam(model, img_batch, last_conv_layer_name=last_conv_layer_name)
-    gradcam_result = overlay_gradcam(sample_mri, heatmap)
+        conv_names = [l.name for l in model.layers if isinstance(l, tf.keras.layers.Conv2D)]
+        last_conv_layer_name = conv_names[-1] if conv_names else None
+    if last_conv_layer_name is not None:
+        heatmap, pred_idx = generate_gradcam(model, img_batch, last_conv_layer_name=last_conv_layer_name)
+        gradcam_result = overlay_gradcam(sample_mri, heatmap)
+    else:
+        # Pure transformers (ViT) have no conv feature map for Grad-CAM to weight
+        pred_idx = int(model.predict(img_batch, verbose=0).argmax(axis=1)[0])
+        gradcam_result = None
+    pred_label = class_names[pred_idx] if class_names is not None else pred_idx
 
     # --- Run LIME ---
     lime_img, lime_mask = explain_with_lime(model, sample_mri)
@@ -153,12 +161,16 @@ def main_explain(model, sample_mri, background_batch=None, last_conv_layer_name=
     
     # Original scan
     axes[0].imshow(sample_mri.squeeze(), cmap='gray')
-    axes[0].set_title(f"Original Scan\n(Pred Class: {pred_idx})")
+    axes[0].set_title(f"Original Scan\n(Pred: {pred_label})")
     axes[0].axis('off')
 
     # Grad-CAM Display
-    axes[1].imshow(gradcam_result)
-    axes[1].set_title("Grad-CAM\n(Global Regions)")
+    if gradcam_result is not None:
+        axes[1].imshow(gradcam_result)
+        axes[1].set_title("Grad-CAM\n(Global Regions)")
+    else:
+        axes[1].text(0.5, 0.5, 'Grad-CAM Skipped\n(No Conv2D Layer)', ha='center', va='center')
+        axes[1].set_title("Grad-CAM")
     axes[1].axis('off')
 
     # LIME Display
@@ -184,5 +196,6 @@ def main_explain(model, sample_mri, background_batch=None, last_conv_layer_name=
     axes[3].axis('off')
 
     plt.tight_layout()
-    plt.savefig("outputs/mri_xai_explanations.png", bbox_inches='tight')
+    plt.savefig(save_path, bbox_inches='tight')
     plt.show()
+    plt.close(fig)

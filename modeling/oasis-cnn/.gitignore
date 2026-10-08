@@ -11,3 +11,4 @@ __pycache__/
 .DS_Store
 *.h5
 *.keras
+!outputs/seed_summary.csv

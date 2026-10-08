@@ -2,9 +2,9 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
-"""CNN architecture for 3-class dementia classification on 208x176 MRI slices."""
+"""CNN architecture for binary (Non_Demented vs Demented) classification on 208x176 MRI slices."""
 
-def build_model(input_shape=(208, 176, 1), num_classes=3, l2=1e-5):
+def build_model(input_shape=(208, 176, 1), num_classes=2, l2=1e-5):
     # No horizontal flip: hemisphere asymmetry is itself a signal for
     # atrophy, so mirroring the scan would throw that away.
     inputs = keras.Input(shape=input_shape)
@@ -65,9 +65,9 @@ class PatchEncoder(layers.Layer):
         positions = tf.range(start=0, limit=self.num_patches, delta=1)
         return self.projection(patch) + self.position_embedding(positions)
 
-"""ViT architecture for 3-class dementia classification on 208x176 MRI slices."""
+"""ViT architecture for binary (Non_Demented vs Demented) classification on 208x176 MRI slices."""
 
-def build_vit_model(input_shape=(208, 176, 1), num_classes=3, l2_reg=1e-5):
+def build_vit_model(input_shape=(208, 176, 1), num_classes=2, l2_reg=1e-5):
     # Setup patches (Must divide input cleanly: 208/16 = 13, 176/16 = 11)
     patch_size = 16
     num_patches = (input_shape[0] // patch_size) * (input_shape[1] // patch_size)
@@ -121,9 +121,9 @@ def build_vit_model(input_shape=(208, 176, 1), num_classes=3, l2_reg=1e-5):
 
     return keras.Model(inputs, outputs, name="dementia_vit")
 
-"""CNN-SVM architecture for 3-class dementia classification on 208x176 MRI slices."""
+"""CNN-SVM architecture for binary (Non_Demented vs Demented) classification on 208x176 MRI slices."""
 
-def build_cnn_svm_model(input_shape=(208, 176, 1), num_classes=3, l2=1e-5):
+def build_cnn_svm_model(input_shape=(208, 176, 1), num_classes=2, l2=1e-5):
     inputs = keras.Input(shape=input_shape)
 
     # Custom Augmentation (NO FLIPS)
@@ -155,10 +155,10 @@ def build_cnn_svm_model(input_shape=(208, 176, 1), num_classes=3, l2=1e-5):
 
     return keras.Model(inputs, outputs, name="dementia_cnn_svm")
 
-"""CNN-Transformer architecture for 3-class dementia classification on 208x176 MRI slices."""
+"""CNN-Transformer architecture for binary (Non_Demented vs Demented) classification on 208x176 MRI slices."""
 
 def build_hybrid_cnn_transformer(
-    input_shape=(208, 176, 1), num_classes=3, l2=1e-5
+    input_shape=(208, 176, 1), num_classes=2, l2=1e-5
 ):
     inputs = keras.Input(shape=input_shape)
 
