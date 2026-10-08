@@ -1,5 +1,7 @@
-"""Train the CNN on the OASIS-1 slice dataset and report per-slice and
-patient-level (majority vote) metrics on the held-out test split."""
+"""Train diverse architectures on the OASIS-1 slice dataset and report 
+per-slice and patient-level (majority vote) metrics on the held-out test split.
+"""
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -7,16 +9,25 @@ import tensorflow as tf
 from sklearn.metrics import balanced_accuracy_score, classification_report, confusion_matrix
 
 from dataset import balanced_train_dataset, class_names, load_split
-from model import build_model
+from model import (
+    build_model,                  # Standard CNN
+    build_vit_model,              # Vision Transformer
+    build_cnn_svm_model,          # CNN-SVM Hybrid
+    build_hybrid_cnn_transformer, # CNN-Transformer Hybrid
+)
 
 ROOT = Path(__file__).resolve().parent.parent
-CHECKPOINT_PATH = ROOT / "checkpoints" / "best_model.keras"
-HISTORY_PLOT_PATH = ROOT / "outputs" / "training_history.png"
-CONFUSION_PLOT_PATH = ROOT / "outputs" / "confusion_matrix_test.png"
-
 BATCH_SIZE = 64
 EPOCHS = 40
 SEED = 123
+
+# Dictionary mapping model keys to their building functions
+MODEL_FACTORY = {
+    "cnn": build_model,
+    "vit": build_vit_model,
+    "cnn_svm": build_cnn_svm_model,
+    "hybrid": build_hybrid_cnn_transformer,
+}
 
 
 def make_dataset(images, labels, training, batch_size=BATCH_SIZE):
@@ -27,20 +38,13 @@ def make_dataset(images, labels, training, batch_size=BATCH_SIZE):
 
 
 class BalancedAccuracy(tf.keras.callbacks.Callback):
-    """Adds val_balanced_acc (mean per-class recall) to the logs each epoch.
+    """Adds val_balanced_acc (mean per-class recall) to the logs each epoch."""
 
-    Plain val_loss/val_accuracy picked the very first epoch as "best" here,
-    since that's when the model still leaned toward the majority class and
-    so had the lowest confidently-wrong penalty on this imbalanced,
-    34-patient validation split -- even though later epochs were the ones
-    actually learning to recognize all three classes. Balanced accuracy
-    scores per-class recall equally, so it doesn't reward that shortcut.
-    """
-
-    def __init__(self, X_val, y_val):
+    def __init__(self, X_val, y_val, is_svm=False):
         super().__init__()
         self.X_val = X_val
         self.y_val = y_val
+        self.is_svm = is_svm
 
     def on_epoch_end(self, epoch, logs=None):
         preds = self.model.predict(self.X_val, verbose=0).argmax(axis=1)
@@ -48,7 +52,7 @@ class BalancedAccuracy(tf.keras.callbacks.Callback):
 
 
 def patient_level_predictions(probs, patient_ids, true_labels):
-    """Majority-vote the per-slice softmax predictions up to one label per patient."""
+    """Majority-vote the per-slice predictions up to one label per patient."""
     pred_labels = probs.argmax(axis=1)
     unique_patients = np.unique(patient_ids)
 
@@ -57,12 +61,11 @@ def patient_level_predictions(probs, patient_ids, true_labels):
         mask = patient_ids == pid
         votes = np.bincount(pred_labels[mask], minlength=probs.shape[1])
         patient_pred.append(votes.argmax())
-        # all slices for a patient share one label
         patient_true.append(true_labels[mask][0])
     return np.array(patient_true), np.array(patient_pred)
 
 
-def plot_history(history):
+def plot_history(history, save_path):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
@@ -71,18 +74,23 @@ def plot_history(history):
     axes[0].set_title("Loss")
     axes[0].legend()
 
-    axes[1].plot(history.history["accuracy"], label="train")
-    axes[1].plot(history.history["val_accuracy"], label="val")
-    axes[1].set_title("Accuracy")
-    axes[1].legend()
+    # Accommodate metric names if using categorical/hinge accuracy
+    acc_key = "accuracy" if "accuracy" in history.history else "categorical_accuracy"
+    val_acc_key = f"val_{acc_key}"
+    
+    if acc_key in history.history:
+        axes[1].plot(history.history[acc_key], label="train")
+        axes[1].plot(history.history[val_acc_key], label="val")
+        axes[1].set_title("Accuracy")
+        axes[1].legend()
 
     fig.tight_layout()
-    HISTORY_PLOT_PATH.parent.mkdir(exist_ok=True)
-    fig.savefig(HISTORY_PLOT_PATH)
+    save_path.parent.mkdir(exist_ok=True)
+    fig.savefig(save_path)
     plt.close(fig)
 
 
-def plot_confusion(cm, labels):
+def plot_confusion(cm, labels, save_path):
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(5, 5))
@@ -98,12 +106,27 @@ def plot_confusion(cm, labels):
             ax.text(j, i, cm[i, j], ha="center", va="center")
     fig.colorbar(im)
     fig.tight_layout()
-    CONFUSION_PLOT_PATH.parent.mkdir(exist_ok=True)
-    fig.savefig(CONFUSION_PLOT_PATH)
+    save_path.parent.mkdir(exist_ok=True)
+    fig.savefig(save_path)
     plt.close(fig)
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Train MRI Dementia Classifiers")
+    parser.add_argument(
+        "--model", 
+        type=str, 
+        default="cnn",  # <-- Allows running without parameters (defaults to cnn)
+        choices=list(MODEL_FACTORY.keys()),
+        help="Architecture type to train (default: cnn)"
+    )
+    args = parser.parse_args()
+
+    # Dynamic Model-Specific Output Paths
+    checkpoint_path = ROOT / "checkpoints" / f"best_model_{args.model}.keras"
+    history_plot_path = ROOT / "outputs" / f"training_history_{args.model}.png"
+    confusion_plot_path = ROOT / "outputs" / f"confusion_matrix_test_{args.model}.png"
+
     tf.random.set_seed(SEED)
 
     print("Loading data...")
@@ -112,22 +135,44 @@ def main():
     X_test, y_test, patient_ids_test = load_split("test")
     print(f"train={len(X_train)} val={len(X_val)} test={len(X_test)}")
 
-    train_ds = balanced_train_dataset(X_train, y_train, BATCH_SIZE, SEED)
-    steps_per_epoch = len(X_train) // BATCH_SIZE
-    val_ds = make_dataset(X_val, y_val, training=False)
-    test_ds = make_dataset(X_test, y_test, training=False)
+    # Specific Configuration adjustments for SVM Head
+    is_svm = args.model == "cnn_svm"
+    if is_svm:
+        # SVM Multi-class hinge loss expects one-hot encoded targets
+        y_train_encoded = tf.keras.utils.to_categorical(y_train, num_classes=3)
+        y_val_encoded = tf.keras.utils.to_categorical(y_val, num_classes=3)
+        y_test_encoded = tf.keras.utils.to_categorical(y_test, num_classes=3)
+        
+        loss_fn = "squared_hinge"
+        metrics = ["categorical_accuracy"]
+        
+        train_ds = balanced_train_dataset(X_train, y_train, BATCH_SIZE, SEED)
+        train_ds = train_ds.map(lambda x, y: (x, tf.one_hot(tf.cast(y, tf.int32), depth=3)))
+        
+        val_ds = make_dataset(X_val, y_val_encoded, training=False)
+        test_ds = make_dataset(X_test, y_test_encoded, training=False)
+    else:
+        loss_fn = "sparse_categorical_crossentropy"
+        metrics = ["accuracy"]
+        train_ds = balanced_train_dataset(X_train, y_train, BATCH_SIZE, SEED)
+        val_ds = make_dataset(X_val, y_val, training=False)
+        test_ds = make_dataset(X_test, y_test, training=False)
 
-    model = build_model(input_shape=X_train.shape[1:], num_classes=3)
+    steps_per_epoch = len(X_train) // BATCH_SIZE
+
+    print(f"\nBuilding architecture profile: {args.model}...")
+    model = MODEL_FACTORY[args.model](input_shape=X_train.shape[1:], num_classes=3)
+    
     model.compile(
         optimizer=tf.keras.optimizers.Adam(5e-4, clipnorm=1.0),
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
+        loss=loss_fn,
+        metrics=metrics,
     )
     model.summary()
 
-    CHECKPOINT_PATH.parent.mkdir(exist_ok=True)
+    checkpoint_path.parent.mkdir(exist_ok=True)
     callbacks = [
-        BalancedAccuracy(X_val, y_val),  # must run first to populate logs
+        BalancedAccuracy(X_val, y_val, is_svm=is_svm), 
         tf.keras.callbacks.EarlyStopping(
             monitor="val_balanced_acc", mode="max", patience=12, restore_best_weights=True
         ),
@@ -135,7 +180,7 @@ def main():
             monitor="val_balanced_acc", mode="max", factor=0.5, patience=5, min_lr=1e-6
         ),
         tf.keras.callbacks.ModelCheckpoint(
-            CHECKPOINT_PATH, monitor="val_balanced_acc", mode="max", save_best_only=True
+            checkpoint_path, monitor="val_balanced_acc", mode="max", save_best_only=True
         ),
     ]
 
@@ -146,7 +191,7 @@ def main():
         epochs=EPOCHS,
         callbacks=callbacks,
     )
-    plot_history(history)
+    plot_history(history, history_plot_path)
 
     print("\nEvaluating on test split (per-slice)...")
     test_probs = model.predict(test_ds)
@@ -164,12 +209,13 @@ def main():
     print(classification_report(patient_true, patient_pred, target_names=names))
     cm_patient = confusion_matrix(patient_true, patient_pred)
     print("Patient-level confusion matrix:\n", cm_patient)
-    plot_confusion(cm_patient, names)
+    plot_confusion(cm_patient, names, confusion_plot_path)
 
-    print(f"\nBest model saved to {CHECKPOINT_PATH}")
-    print(f"Training curves saved to {HISTORY_PLOT_PATH}")
-    print(f"Patient-level confusion matrix saved to {CONFUSION_PLOT_PATH}")
+    print(f"\nBest model saved to {checkpoint_path}")
+    print(f"Training curves saved to {history_plot_path}")
+    print(f"Patient-level confusion matrix saved to {confusion_plot_path}")
 
 
 if __name__ == "__main__":
     main()
+
