@@ -1,0 +1,13 @@
+# Prepped OASIS-1 data and anything trained from it -- can't go in a public
+# repo under the data use agreement (see data_preparation/OASIS-1/Data/).
+data/
+checkpoints/
+outputs/*
+!outputs/experiment_log.csv
+!outputs/best_overall_info.json
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+*.h5
+*.keras
