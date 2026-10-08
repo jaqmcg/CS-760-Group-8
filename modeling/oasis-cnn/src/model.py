@@ -33,9 +33,26 @@ def build_model(input_shape=(208, 176, 1), num_classes=3, l2=1e-5):
     return keras.Model(inputs, outputs, name="dementia_cnn")
 
 
+class PatchExtractor(layers.Layer):
+    """Safely extracts patches inside a Keras 3 Functional pipeline."""
+    def __init__(self, patch_size):
+        super().__init__()
+        self.patch_size = patch_size
+
+    def call(self, images):
+        # Native TensorFlow ops must live safely inside a Layer's call method
+        patches = tf.image.extract_patches(
+            images=images,
+            sizes=[1, self.patch_size, self.patch_size, 1],
+            strides=[1, self.patch_size, self.patch_size, 1],
+            rates=[1, 1, 1, 1],
+            padding="VALID",
+        )
+        return patches
+
+
 class PatchEncoder(layers.Layer):
     """Cuts the MRI into patches and injects position embeddings."""
-
     def __init__(self, num_patches, projection_dim):
         super().__init__()
         self.num_patches = num_patches
@@ -65,15 +82,10 @@ def build_vit_model(input_shape=(208, 176, 1), num_classes=3, l2_reg=1e-5):
     x = layers.RandomRotation(0.02)(inputs)
     x = layers.RandomTranslation(0.02, 0.02)(x)
 
-    # 2. Extract Patches
+    # 2. Extract Patches using our new Keras-compliant layer
+    patches = PatchExtractor(patch_size=patch_size)(x)
+    
     # Reshape to: (batch, num_patches, patch_area * channels)
-    patches = tf.image.extract_patches(
-        images=x,
-        sizes=[1, patch_size, patch_size, 1],
-        strides=[1, patch_size, patch_size, 1],
-        rates=[1, 1, 1, 1],
-        padding="VALID",
-    )
     patches = layers.Reshape((num_patches, patch_size * patch_size * input_shape[-1]))(
         patches
     )
